@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Generador de Informes — 17D08</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --parchment: #FAF6F1;
+  --cream: #F3EDE4;
+  --sand: #E8DFD3;
+  --ink: #1A1612;
+  --ink-soft: #3D362E;
+  --ink-dim: #7A7067;
+  --ink-ghost: #B8AFA5;
+  --rust: #B85C38;
+  --rust-light: rgba(184,92,56,.08);
+  --rust-glow: rgba(184,92,56,.15);
+  --forest: #2D6A4F;
+  --forest-light: rgba(45,106,79,.08);
+  --navy: #264653;
+  --navy-light: rgba(38,70,83,.06);
+  --white: #FFFFFF;
+  --r: 6px;
+  --rl: 10px;
+  --shadow-sm: 0 1px 3px rgba(26,22,18,.06);
+  --shadow-md: 0 4px 12px rgba(26,22,18,.08);
+  --shadow-lg: 0 8px 30px rgba(26,22,18,.12);
+  --sans: 'Outfit', sans-serif;
+  --serif: 'Newsreader', Georgia, serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:var(--sans); background:var(--cream); color:var(--ink); min-height:100vh; }
+
+/* GRAIN OVERLAY */
+body::before {
+  content:''; position:fixed; inset:0; z-index:9999; pointer-events:none; opacity:.03;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* LAYOUT */
+.app { max-width:860px; margin:0 auto; padding:20px 24px 60px; }
+
+/* HEADER */
+.masthead {
+  text-align:center; padding:40px 0 28px;
+  border-bottom:2px solid var(--ink); margin-bottom:36px;
+  position:relative;
+}
+.masthead::after {
+  content:''; position:absolute; bottom:-6px; left:50%; transform:translateX(-50%);
+  width:40px; height:2px; background:var(--rust);
+}
+.masthead h1 {
+  font-family:var(--serif); font-size:1.65rem; font-weight:700;
+  letter-spacing:-.02em; color:var(--ink); line-height:1.2;
+}
+.masthead .sub {
+  font-size:.78rem; font-weight:400; color:var(--ink-dim);
+  letter-spacing:.12em; text-transform:uppercase; margin-top:8px;
+}
+
+/* STEPPER */
+.steps { display:flex; justify-content:center; gap:6px; margin-bottom:36px; }
+.st {
+  display:flex; align-items:center; gap:6px; padding:6px 14px;
+  border-radius:100px; background:var(--white); border:1px solid var(--sand);
+  font-size:.72rem; font-weight:500; color:var(--ink-ghost);
+  transition:all .3s ease; letter-spacing:.02em;
+}
+.st.active { border-color:var(--rust); color:var(--rust); background:var(--rust-light); }
+.st.done { border-color:var(--forest); color:var(--forest); background:var(--forest-light); }
+.st .num {
+  width:20px; height:20px; border-radius:50%; background:var(--sand);
+  display:flex; align-items:center; justify-content:center;
+  font-size:.65rem; font-weight:700; transition:.3s;
+}
+.st.active .num { background:var(--rust); color:var(--white); }
+.st.done .num { background:var(--forest); color:var(--white); }
+
+/* CARDS */
+.card {
+  background:var(--white); border:1px solid var(--sand);
+  border-radius:var(--rl); padding:24px; margin-bottom:16px;
+  box-shadow:var(--shadow-sm); transition:box-shadow .2s;
+}
+.card:hover { box-shadow:var(--shadow-md); }
+.card-t {
+  font-family:var(--serif); font-size:1rem; font-weight:600;
+  margin-bottom:14px; display:flex; align-items:center; gap:10px;
+  color:var(--ink);
+}
+.card-t .dot { width:6px; height:6px; border-radius:50%; background:var(--rust); flex-shrink:0; }
+
+/* UPLOAD */
+.upload-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.uz {
+  border:1.5px dashed var(--sand); border-radius:var(--rl); padding:28px 16px;
+  text-align:center; cursor:pointer; transition:all .25s ease;
+  background:var(--parchment);
+}
+.uz:hover { border-color:var(--rust); background:var(--rust-light); }
+.uz.hf { border-color:var(--forest); border-style:solid; background:var(--forest-light); }
+.uz input { display:none; }
+.uz .icon { font-size:1.6rem; margin-bottom:6px; }
+.uz .title { font-weight:600; font-size:.82rem; color:var(--ink-soft); }
+.uz .desc { font-size:.72rem; color:var(--ink-dim); margin-top:3px; }
+.uz .fname { font-size:.72rem; color:var(--forest); margin-top:6px; font-weight:600; }
+
+/* FORMS */
+.fg { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.fi { display:flex; flex-direction:column; gap:4px; }
+.fi.full { grid-column:1/-1; }
+label {
+  font-size:.68rem; font-weight:600; color:var(--ink-dim);
+  text-transform:uppercase; letter-spacing:.06em;
+}
+input,select,textarea {
+  background:var(--parchment); border:1px solid var(--sand); border-radius:var(--r);
+  padding:8px 12px; color:var(--ink); font-family:var(--sans);
+  font-size:.82rem; outline:none; transition:border-color .2s;
+}
+input:focus,select:focus { border-color:var(--rust); }
+textarea { resize:vertical; min-height:50px; }
+
+/* BUTTONS */
+.btn {
+  display:inline-flex; align-items:center; gap:6px; padding:8px 18px;
+  border-radius:var(--r); border:none; font-family:var(--sans);
+  font-size:.8rem; font-weight:600; cursor:pointer; transition:all .2s;
+  letter-spacing:.01em;
+}
+.bp { background:var(--rust); color:var(--white); }
+.bp:hover { background:#a04e2e; transform:translateY(-1px); box-shadow:var(--shadow-sm); }
+.bp:disabled { opacity:.4; cursor:not-allowed; transform:none; }
+.bs { background:var(--forest); color:var(--white); }
+.bs:hover { background:#245a42; }
+.bo { background:transparent; border:1px solid var(--sand); color:var(--ink-soft); }
+.bo:hover { border-color:var(--rust); color:var(--rust); }
+.bsm { padding:5px 12px; font-size:.7rem; }
+.acts { display:flex; justify-content:space-between; align-items:center; margin-top:20px; padding-top:16px; border-top:1px solid var(--sand); }
+
+/* TABLES */
+.tw { overflow-x:auto; border-radius:var(--r); border:1px solid var(--sand); margin:10px 0; }
+table { width:100%; border-collapse:collapse; font-size:.74rem; }
+th {
+  background:var(--parchment); padding:7px 10px; text-align:left;
+  font-weight:600; font-size:.66rem; text-transform:uppercase;
+  letter-spacing:.04em; color:var(--ink-dim); border-bottom:1px solid var(--sand);
+  white-space:nowrap;
+}
+td { padding:6px 10px; border-bottom:1px solid #F0EBE4; color:var(--ink-soft); }
+tr:last-child td { border-bottom:none; }
+tr:hover td { background:var(--rust-light); }
+
+/* NOVEDADES */
+.nc {
+  background:var(--parchment); border:1px solid var(--sand); border-radius:var(--r);
+  padding:14px; margin-bottom:8px; transition:all .2s;
+}
+.nc.act { border-color:var(--rust); background:var(--rust-light); }
+.nh { display:flex; align-items:center; gap:10px; }
+.nt { display:flex; align-items:center; gap:10px; cursor:pointer; flex:1; }
+.ts {
+  width:34px; height:18px; border-radius:9px; background:var(--sand);
+  position:relative; transition:.2s; flex-shrink:0;
+}
+.ts.on { background:var(--rust); }
+.ts::after {
+  content:''; width:14px; height:14px; border-radius:50%; background:var(--white);
+  position:absolute; top:2px; left:2px; transition:.2s;
+  box-shadow:0 1px 2px rgba(0,0,0,.15);
+}
+.ts.on::after { transform:translateX(16px); }
+.nn { font-weight:600; font-size:.78rem; color:var(--ink-soft); }
+.nb { margin-top:12px; padding-top:12px; border-top:1px solid var(--sand); display:none; }
+.nc.act .nb { display:block; }
+.ns { display:flex; gap:6px; margin-bottom:10px; }
+.ns .btn.sel { background:var(--rust); color:var(--white); border-color:var(--rust); }
+
+/* SELECT IN TABLE */
+.ms {
+  background:var(--parchment); border:1px solid var(--sand); border-radius:4px;
+  padding:3px 6px; color:var(--ink-soft); font-family:var(--sans); font-size:.72rem;
+}
+
+/* STATS */
+.sg { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin:14px 0; }
+.sc { background:var(--parchment); border-radius:var(--r); padding:12px; text-align:center; border:1px solid var(--sand); }
+.sv { font-size:1.4rem; font-weight:700; font-family:var(--serif); }
+.sl { font-size:.62rem; color:var(--ink-dim); margin-top:2px; text-transform:uppercase; letter-spacing:.04em; font-weight:500; }
+.sv.bl { color:var(--navy); } .sv.gn { color:var(--forest); } .sv.rd { color:var(--rust); } .sv.yl { color:#C77B2A; }
+
+/* ACCORDION */
+.ca { border:1px solid var(--sand); border-radius:var(--r); margin-bottom:6px; overflow:hidden; }
+.ch {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 14px; cursor:pointer; background:var(--parchment); transition:.2s;
+}
+.ch:hover { background:var(--rust-light); }
+.ch .ctt { font-weight:600; font-size:.78rem; }
+.ch .cc {
+  background:var(--rust); color:var(--white); font-size:.65rem;
+  padding:2px 8px; border-radius:100px; font-weight:700;
+}
+.cb { display:none; padding:10px; max-height:350px; overflow-y:auto; background:var(--white); }
+.cb.open { display:block; }
+
+/* DOWNLOAD */
+.dc { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:16px 0; }
+.dlc {
+  background:var(--parchment); border:1px solid var(--sand); border-radius:var(--rl);
+  padding:20px; text-align:center; transition:all .25s;
+}
+.dlc:hover { border-color:var(--rust); transform:translateY(-2px); box-shadow:var(--shadow-md); }
+
+/* MISC */
+.loading { display:none; text-align:center; padding:32px; }
+.loading.show { display:block; }
+.spinner {
+  width:32px; height:32px; border:2.5px solid var(--sand);
+  border-top-color:var(--rust); border-radius:50%;
+  animation:spin .7s linear infinite; margin:0 auto 12px;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+.toast {
+  position:fixed; bottom:20px; right:20px; padding:10px 18px;
+  border-radius:var(--r); font-size:.8rem; font-weight:500; z-index:1000;
+  transform:translateY(100px); opacity:0; transition:.3s;
+  box-shadow:var(--shadow-lg);
+}
+.toast.show { transform:translateY(0); opacity:1; }
+.toast.error { background:#C0392B; color:var(--white); }
+.toast.success { background:var(--forest); color:var(--white); }
+.et input { width:100%; padding:3px 6px; font-size:.72rem; background:var(--white); border:1px solid var(--sand); border-radius:3px; }
+.arb {
+  display:block; width:100%; padding:7px; background:transparent;
+  border:1px dashed var(--sand); border-radius:4px; color:var(--ink-ghost);
+  font-size:.74rem; cursor:pointer; margin-top:8px; transition:.2s; font-family:var(--sans);
+}
+.arb:hover { border-color:var(--rust); color:var(--rust); }
+.rrb { background:none; border:none; color:var(--rust); cursor:pointer; font-size:.9rem; padding:2px 4px; opacity:.6; }
+.rrb:hover { opacity:1; }
+.prefix-group { display:flex; align-items:center; }
+.prefix-label {
+  background:var(--sand); border:1px solid var(--sand); border-right:none;
+  border-radius:var(--r) 0 0 var(--r); padding:8px 10px;
+  font-size:.72rem; color:var(--ink-dim); white-space:nowrap; font-weight:500;
+}
+.prefix-group input { border-radius:0 var(--r) var(--r) 0; }
+.hidden { display:none !important; }
+a.btn { text-decoration:none; }
+@media(max-width:768px) { .upload-grid,.fg,.dc { grid-template-columns:1fr; } .steps { flex-wrap:wrap; } }
+
+/* DRAG & DROP */
+.nc { cursor:default; }
+.nc.dragging { opacity:.45; box-shadow:0 8px 24px rgba(184,92,56,.25); transform:scale(.98); }
+.nc.drag-over { border-color:var(--rust); background:var(--rust-light); box-shadow:0 0 0 2px var(--rust); }
+.drag-handle {
+  cursor:grab; padding:4px 6px; color:var(--ink-ghost); font-size:1rem;
+  border-radius:4px; transition:.15s; user-select:none; flex-shrink:0;
+}
+.drag-handle:hover { color:var(--rust); background:var(--rust-light); }
+.drag-handle:active { cursor:grabbing; }
+
+/* PROGRESS TIMER */
+.gen-progress {
+  display:none; padding:20px; text-align:center;
+}
+.gen-progress.show { display:block; }
+.gen-timer {
+  font-family:var(--serif); font-size:2rem; font-weight:700;
+  color:var(--rust); margin-bottom:6px; letter-spacing:-.02em;
+}
+.gen-phase {
+  font-size:.78rem; color:var(--ink-dim); margin-bottom:14px;
+  min-height:1.2em; transition:all .4s ease;
+}
+.gen-bar-wrap {
+  background:var(--sand); border-radius:100px; height:4px;
+  overflow:hidden; max-width:300px; margin:0 auto;
+}
+.gen-bar {
+  height:100%; background:var(--rust); border-radius:100px;
+  width:0%; transition:width .6s ease;
+}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="masthead">
+  <h1>Generador de Informes de Nómina</h1>
+  <div class="sub">Dirección Distrital 17D08 · Parroquias Rurales Conocoto a la Merced</div>
+</header>
+
+<div class="steps">
+  <div class="st active" id="si1"><span class="num">1</span><span>Archivos</span></div>
+  <div class="st" id="si2"><span class="num">2</span><span>Datos</span></div>
+  <div class="st" id="si3"><span class="num">3</span><span>Novedades</span></div>
+  <div class="st" id="si4"><span class="num">4</span><span>Generar</span></div>
+</div>
+
+<!-- S1 -->
+<section id="s1">
+<div class="card">
+  <div class="card-t"><span class="dot"></span>Cargar Distributivos</div>
+  <p style="color:var(--ink-dim);font-size:.78rem;margin-bottom:16px">Suba los dos archivos Excel del distributivo (.xls o .xlsx)</p>
+  <div class="upload-grid">
+    <div class="uz" id="za" onclick="$('fa').click()"><div class="icon">📊</div><div class="title">Mes en Curso</div><div class="desc">Archivo del mes que se reporta</div><div class="fname" id="na"></div><input type="file" id="fa" accept=".xls,.xlsx" onchange="fsel(this,'a')"></div>
+    <div class="uz" id="zb" onclick="$('fb').click()"><div class="icon">📋</div><div class="title">Mes Anterior</div><div class="desc">Archivo del mes anterior</div><div class="fname" id="nb"></div><input type="file" id="fb" accept=".xls,.xlsx" onchange="fsel(this,'b')"></div>
+  </div>
+  <div id="us" class="hidden"><div class="sg" id="usg"></div></div>
+  <div class="acts"><div></div><button class="btn bp" id="bu" disabled onclick="doUpload()">Validar y Continuar →</button></div>
+</div>
+<div class="loading" id="l1"><div class="spinner"></div><p style="color:var(--ink-dim);font-size:.82rem">Leyendo archivos…</p></div>
+</section>
+
+<!-- S2 -->
+<section id="s2" class="hidden">
+<div class="card">
+  <div class="card-t"><span class="dot"></span>Identificación del Informe</div>
+  <div class="fg">
+    <div class="fi"><label>Fecha</label><input type="date" id="df"></div>
+    <div class="fi"><label>Número de Informe</label><div class="prefix-group"><span class="prefix-label">MINEDUC-17D08-DDTH-</span><input type="text" id="dn" placeholder="2026-095" style="flex:1"></div></div>
+    <div class="fi"><label>Mes</label><select id="dm"><option value="ENERO">Enero</option><option value="FEBRERO">Febrero</option><option value="MARZO">Marzo</option><option value="ABRIL" selected>Abril</option><option value="MAYO">Mayo</option><option value="JUNIO">Junio</option><option value="JULIO">Julio</option><option value="AGOSTO">Agosto</option><option value="SEPTIEMBRE">Septiembre</option><option value="OCTUBRE">Octubre</option><option value="NOVIEMBRE">Noviembre</option><option value="DICIEMBRE">Diciembre</option></select></div>
+    <div class="fi"><label>Año</label><input type="number" id="dy" value="2026"></div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-t"><span class="dot"></span>Funcionario Responsable</div>
+  <div class="fg">
+    <div class="fi"><label>Nombre</label><input id="rn" value="Ing. Diana Carolina Sánchez Osorio"></div>
+    <div class="fi"><label>Cargo</label><input id="rc" value="Jefe Distrital de Talento Humano"></div>
+    <div class="fi"><label>Extensión</label><input id="re" value="3819"></div>
+    <div class="fi"><label>Correo</label><input id="rm" value="carolina.sanchez@educacion.gob.ec"></div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-t"><span class="dot"></span>Dirigido A</div>
+  <div class="fg">
+    <div class="fi"><label>Nombre</label><input id="ddn" value="MSc. Manuel Lenin Espinoza Avilés"></div>
+    <div class="fi"><label>Cargo</label><input id="ddc" value="Director Distrital 17D08 Parroquias Rurales Conocoto la Merced-Educación"></div>
+    <div class="fi"><label>Extensión</label><input id="dde" value="38002"></div>
+    <div class="fi"><label>Correo</label><input id="ddm" value="manuel.espinozaaj@educacion.gob.ec"></div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-t"><span class="dot"></span>Firmas</div>
+  <p style="color:var(--ink-dim);font-size:.74rem;margin-bottom:12px">Formato Plantilla: Elaborado por + Aprobado por</p>
+  <div class="fg">
+    <div class="fi"><label>Elaborado — Nombre</label><input id="en" value="Gabriela Misell Guzmán Cabrera"></div>
+    <div class="fi"><label>Elaborado — Cargo</label><input id="ec" value="Analista de Talento Humano"></div>
+    <div class="fi"><label>Aprobado — Nombre</label><input id="an" value="Ing. Diana Carolina Sánchez Osorio"></div>
+    <div class="fi"><label>Aprobado — Cargo</label><input id="ac2" value="Jefe Distrital de Talento Humano"></div>
+  </div>
+</div>
+<div class="acts"><button class="btn bo" onclick="go(1)">← Atrás</button><button class="btn bp" onclick="go(3)">Novedades →</button></div>
+</section>
+
+<!-- S3 -->
+<section id="s3" class="hidden">
+<div class="card">
+  <div class="card-t"><span class="dot"></span>Comparación de Distributivos</div>
+  <div class="sg" id="cs"></div>
+  <div id="ss" class="hidden">
+    <p style="font-family:var(--serif);font-weight:600;font-size:.88rem;margin:14px 0 6px">Personas desvinculadas</p>
+    <p style="color:var(--ink-dim);font-size:.72rem;margin-bottom:8px">Seleccione motivo y agregue la fecha de desvinculación:</p>
+    <div class="tw"><table><thead><tr><th>Cédula</th><th>Nombres</th><th>Motivo</th><th>Observación</th></tr></thead><tbody id="stb"></tbody></table></div>
+    <p style="color:var(--ink-dim);font-size:.68rem;margin-top:6px;font-style:italic">* Los tipos de Jubilación generan automáticamente una novedad separada en el informe.</p>
+  </div>
+  <div id="es" class="hidden">
+    <p style="font-family:var(--serif);font-weight:600;font-size:.88rem;margin:14px 0 6px">Vinculaciones nuevas</p>
+    <div class="tw"><table><thead><tr><th>Cédula</th><th>Nombres</th><th>Régimen</th><th>Modalidad</th><th>RMU</th></tr></thead><tbody id="etb"></tbody></table></div>
+  </div>
+  <div id="cs2" class="hidden">
+    <p style="font-family:var(--serif);font-weight:600;font-size:.88rem;margin:14px 0 6px">Vinculaciones — Ganadores de Concurso</p>
+    <p style="color:var(--ink-dim);font-size:.72rem;margin-bottom:8px">Personas que permanecen en el distrito pero cambiaron RMU y/o modalidad.</p>
+    <div class="tw"><table><thead><tr><th>Cédula</th><th>Nombres</th><th>Escala</th><th>RMU nuevo</th><th>Modalidad nueva</th></tr></thead><tbody id="ctb"></tbody></table></div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-t"><span class="dot"></span>Novedades Manuales</div>
+  <p style="color:var(--ink-dim);font-size:.74rem;margin-bottom:14px">Renuncia, Fallecimiento y Notificación se generan automáticamente. Active aquí las novedades adicionales:</p>
+  <div id="nvc"></div>
+  <button class="arb" onclick="addCustomNov()">+ Nueva novedad personalizada</button>
+</div>
+<div class="acts"><button class="btn bo" onclick="go(2)">← Atrás</button><button class="btn bp" onclick="go(4)">Verificar →</button></div>
+<div class="loading" id="l3"><div class="spinner"></div><p style="color:var(--ink-dim);font-size:.82rem">Analizando…</p></div>
+</section>
+
+<!-- S4 -->
+<section id="s4" class="hidden">
+<div class="card">
+  <div class="card-t"><span class="dot"></span>Distribución del Personal</div>
+  <div class="sg" id="ds"></div>
+  <div id="cac"></div>
+</div>
+<div class="card">
+  <div class="card-t"><span class="dot"></span>Generar Documentos</div>
+  <p style="color:var(--ink-dim);font-size:.78rem;margin-bottom:16px">Se usará la Plantilla.docx como formato base. Tablas compactas sin colores.</p>
+  <div style="text-align:center"><button class="btn bs" id="bg" onclick="doGen()" style="font-size:.92rem;padding:12px 32px">Generar Informe →</button></div>
+</div>
+<div class="gen-progress" id="l4">
+  <div class="gen-timer" id="gen-secs">0s</div>
+  <div class="gen-phase" id="gen-phase">Iniciando…</div>
+  <div class="gen-bar-wrap"><div class="gen-bar" id="gen-bar"></div></div>
+</div>
+<div id="dls" class="hidden">
+  <div class="card" style="border-color:var(--forest);background:var(--forest-light)">
+    <div class="card-t" style="color:var(--forest)">✓ Documentos listos</div>
+    <div class="dc" id="dlk"></div>
+  </div>
+</div>
+<div class="acts"><button class="btn bo" onclick="go(3)">← Atrás</button><div></div></div>
+</section>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+let upD={},anD={},novS=[];
+function toast(m,t='error'){const e=$('toast');e.textContent=m;e.className='toast show '+t;setTimeout(()=>e.className='toast',3500)}
+function go(n){for(let i=1;i<=4;i++){$('s'+i).classList.toggle('hidden',i!==n);const s=$('si'+i);s.classList.remove('active','done');if(i<n)s.classList.add('done');if(i===n)s.classList.add('active')}window.scrollTo({top:0,behavior:'smooth'});if(n===3)loadS3();if(n===4)loadS4()}
+function fsel(inp,w){if(!inp.files[0])return;$('n'+w).textContent='✓ '+inp.files[0].name;$('z'+w).classList.add('hf');$('bu').disabled=!($('fa').files.length&&$('fb').files.length)}
+async function doUpload(){
+  const fd=new FormData();fd.append('distributivo_actual',$('fa').files[0]);fd.append('distributivo_anterior',$('fb').files[0]);
+  $('l1').classList.add('show');$('bu').disabled=true;
+  try{const r=await(await fetch('/upload',{method:'POST',body:fd})).json();
+    if(r.error){toast(r.error);$('bu').disabled=false}
+    else{upD=r;$('usg').innerHTML=`<div class="sc"><div class="sv bl">${r.actual.ocupados}</div><div class="sl">Ocupados Actual</div></div><div class="sc"><div class="sv bl">${r.anterior.ocupados}</div><div class="sl">Ocupados Anterior</div></div><div class="sc"><div class="sv gn">${r.actual.total}</div><div class="sl">Total Actual</div></div><div class="sc"><div class="sv gn">${r.anterior.total}</div><div class="sl">Total Anterior</div></div>`;$('us').classList.remove('hidden');toast('Archivos validados','success');setTimeout(()=>go(2),700)}
+  }catch(e){toast('Error: '+e.message);$('bu').disabled=false}$('l1').classList.remove('show')}
+async function loadS3(){
+  $('l3').classList.add('show');
+  try{anD=await(await fetch('/analyze')).json();if(anD.error){toast(anD.error);return}
+    const d=anD.salieron.length-anD.entraron.length;
+    $('cs').innerHTML=`<div class="sc"><div class="sv bl">${anD.total_ocupados_actual}</div><div class="sl">Ocupados</div></div><div class="sc"><div class="sv rd">${anD.salieron.length}</div><div class="sl">Salieron</div></div><div class="sc"><div class="sv gn">${anD.entraron.length}</div><div class="sl">Vinculados nuevos</div></div><div class="sc"><div class="sv gn">${(anD.cambiaron||[]).length}</div><div class="sl">Ganaron concurso</div></div><div class="sc"><div class="sv yl">${d>0?'-'+d:'+'+Math.abs(d)}</div><div class="sl">Diferencia neta</div></div>`;
+    if(anD.salieron.length){$('ss').classList.remove('hidden');$('stb').innerHTML=anD.salieron.map(p=>`<tr><td style="font-size:.72rem;letter-spacing:.02em">${p.cedula}</td><td style="font-size:.74rem">${p.nombres}</td><td><select class="ms" data-ced="${p.cedula}"><option value="RENUNCIA">Renuncia</option><option value="FALLECIMIENTO">Fallecimiento</option><option value="NOTIFICACIÓN">Notificación</option><optgroup label="Jubilación"><option value="JUBILACIÓN VOLUNTARIA">Jubilación Voluntaria</option><option value="JUBILACIÓN OBLIGATORIA">Jubilación Obligatoria</option><option value="JUBILACIÓN POR DISCAPACIDAD">Jubilación por Discapacidad</option><option value="JUBILACIÓN POR INCAPACIDAD">Jubilación por Incapacidad</option></optgroup></select></td><td><input class="ms obs-input" data-ced="${p.cedula}" placeholder="Ej: Renuncia 12-03-2026" style="width:100%;min-width:160px"></td></tr>`).join('')}else $('ss').classList.add('hidden');
+    if(anD.entraron.length){$('es').classList.remove('hidden');$('etb').innerHTML=anD.entraron.map(p=>`<tr><td style="font-size:.72rem">${p.cedula}</td><td style="font-size:.74rem">${p.nombres}</td><td style="font-size:.7rem">${p.regimen.replace(/^\d+\./,'')}</td><td style="font-size:.7rem">${p.modalidad}</td><td style="font-size:.72rem;text-align:right">${p.rmu}</td></tr>`).join('')}else $('es').classList.add('hidden');if(anD.cambiaron&&anD.cambiaron.length){$('cs2').classList.remove('hidden');$('ctb').innerHTML=anD.cambiaron.map(p=>`<tr><td style="font-size:.72rem">${p.cedula}</td><td style="font-size:.74rem">${p.nombres}</td><td style="font-size:.7rem">${p.escala}</td><td style="font-size:.72rem;text-align:right">${p.rmu}</td><td style="font-size:.7rem">${p.modalidad}</td></tr>`).join('')}else $('cs2').classList.add('hidden');
+    const nres=await(await fetch('/novedades_plantilla')).json();novS=nres.filter(n=>!n.is_auto);renderNovs()
+  }catch(e){toast('Error: '+e.message)}$('l3').classList.remove('show')}
+function renderNovs(){
+  $('nvc').innerHTML=novS.map((n,i)=>`
+    <div class="nc ${n.active?'act':''}" id="nv${i}"
+         draggable="true"
+         ondragstart="dndStart(event,${i})"
+         ondragover="dndOver(event,${i})"
+         ondragleave="dndLeave(event,${i})"
+         ondrop="dndDrop(event,${i})"
+         ondragend="dndEnd(event)">
+      <div class="nh">
+        <span class="drag-handle" title="Arrastrar para reordenar">⠿</span>
+        <div class="nt" onclick="togNov(${i})">
+          <div class="ts ${n.active?'on':''}" id="nt${i}"></div>
+          <span class="nn">${n.title}</span>
+        </div>
+      </div>
+      <div class="nb">
+        ${n.has_previous?`<div class="ns"><button class="btn bo bsm ${n._src==='prev'?'sel':''}" onclick="setSrc(${i},'prev')">Usar datos anteriores</button><button class="btn bo bsm ${n._src==='new'?'sel':''}" onclick="setSrc(${i},'new')">Crear nuevos</button></div>`:''}
+        <div id="nvt${i}">${renderNT(n,i)}</div>
+      </div>
+    </div>`).join('');
+}
+function renderNT(n,i){const cols=n.columns||[],rows=n.rows||[];return`<div class="tw"><table class="et"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}<th></th></tr></thead><tbody>${rows.map((r,ri)=>`<tr>${r.map((c,ci)=>`<td><input value="${esc(String(c))}" onchange="uNC(${i},${ri},${ci},this.value)"></td>`).join('')}<td><button class="rrb" onclick="rNR(${i},${ri})">✕</button></td></tr>`).join('')}</tbody></table></div><button class="arb" onclick="aNR(${i})">+ Agregar fila</button>`}
+function esc(s){return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function togNov(i){novS[i].active=!novS[i].active;$('nv'+i).classList.toggle('act');$('nt'+i).classList.toggle('on')}
+async function setSrc(i,src){novS[i]._src=src;if(src==='prev'&&novS[i].has_previous){try{const d=await(await fetch('/previous_data/'+novS[i].id)).json();novS[i].rows=d.rows||[]}catch(e){toast('Error cargando datos')}}else if(src==='new')novS[i].rows=[];$('nvt'+i).innerHTML=renderNT(novS[i],i);const btns=$('nv'+i).querySelectorAll('.ns .btn');btns.forEach(b=>b.classList.remove('sel'));btns[src==='prev'?0:1].classList.add('sel')}
+function aNR(i){const cols=novS[i].columns||[];if(!novS[i].rows)novS[i].rows=[];novS[i].rows.push(cols.map((_,c)=>c===0?String(novS[i].rows.length+1):''));$('nvt'+i).innerHTML=renderNT(novS[i],i)}
+function rNR(i,ri){novS[i].rows.splice(ri,1);novS[i].rows.forEach((r,j)=>r[0]=String(j+1));$('nvt'+i).innerHTML=renderNT(novS[i],i)}
+function uNC(i,ri,ci,v){novS[i].rows[ri][ci]=v}
+function addCustomNov(){const t=prompt('Nombre de la novedad:');if(!t)return;const c=prompt('Columnas (separadas por coma):','NRO.,CÉDULA,NOMBRES,ESCALA,RMU,OBSERVACIÓN');if(!c)return;novS.push({id:'custom_'+Date.now(),title:t.toUpperCase(),description:'',active:true,columns:c.split(',').map(s=>s.trim()),rows:[],has_previous:false,is_auto:false});renderNovs()}
+function loadS4(){if(!anD.categories)return;const cats=anD.categories;let tot=0;$('ds').innerHTML=Object.keys(cats).map(k=>{tot+=cats[k].count;return`<div class="sc"><div class="sv bl">${cats[k].count}</div><div class="sl">${k}</div></div>`}).join('')+`<div class="sc"><div class="sv gn">${tot}</div><div class="sl">Total</div></div>`;$('cac').innerHTML=Object.keys(cats).map(k=>{const c=cats[k];return`<div class="ca"><div class="ch" onclick="this.nextElementSibling.classList.toggle('open')"><span class="ctt">${c.title}</span><span class="cc">${c.count}</span></div><div class="cb"><p style="color:var(--ink-dim);font-size:.7rem;margin-bottom:6px">${c.subtitle}</p><div class="tw"><table><thead><tr><th>Nro</th><th>Cédula</th><th>Nombres</th><th>Escala</th><th>RMU</th></tr></thead><tbody>${c.data.map(r=>`<tr><td style="text-align:center">${r.nro}</td><td style="font-size:.7rem;letter-spacing:.02em">${r.cedula}</td><td>${r.nombres}</td><td style="font-size:.7rem">${r.escala}</td><td style="text-align:right;font-size:.72rem">${r.rmu}</td></tr>`).join('')}</tbody></table></div></div></div>`}).join('')}
+let _genRunning=false;
+let _genTimer=null;
+async function doGen(){
+  if(_genRunning)return;
+  _genRunning=true;
+  $('bg').disabled=true;
+  $('dls').classList.add('hidden');
+  // Start progress UI
+  let elapsed=0;
+  const phases=[
+    {t:0,  txt:'Leyendo y comparando distributivos…', pct:15},
+    {t:4,  txt:'Procesando novedades y desvinculaciones…', pct:35},
+    {t:9,  txt:'Construyendo tablas del informe…', pct:55},
+    {t:18, txt:'Generando documento Word…', pct:75},
+    {t:28, txt:'Generando tablas Excel…', pct:90},
+    {t:40, txt:'Finalizando…', pct:97},
+  ];
+  $('l4').classList.add('show');
+  $('gen-secs').textContent='0s';
+  $('gen-phase').textContent=phases[0].txt;
+  $('gen-bar').style.width='5%';
+  _genTimer=setInterval(()=>{
+    elapsed++;
+    $('gen-secs').textContent=elapsed+'s';
+    const p=phases.slice().reverse().find(x=>elapsed>=x.t);
+    if(p){$('gen-phase').textContent=p.txt;$('gen-bar').style.width=p.pct+'%';}
+  },1000);
+  const mot={},obs={};
+  document.querySelectorAll('select.ms[data-ced]').forEach(s=>mot[s.dataset.ced]=s.value);
+  document.querySelectorAll('input.obs-input[data-ced]').forEach(i=>{if(i.value.trim())obs[i.dataset.ced]=i.value.trim()});
+  const autoNovs=['fallecimiento','renuncia','notificacion'].map(id=>({id,title:id.toUpperCase(),active:false,columns:['NRO.','CÉDULA','NOMBRES','ESCALA','RMU','OBSERVACIÓN'],rows:[],is_auto:true,auto_observations:obs}));
+  // jubilacion_auto placeholder so backend can map obs
+  autoNovs.push({id:'jubilacion_auto',auto_observations:obs});
+  autoNovs.push({id:'vinculacion_auto',auto_observations:obs});
+  autoNovs.push({id:'ganador_concurso_auto',auto_observations:obs});
+  const allNovs=[...novS.filter(n=>n.active),...autoNovs];
+  const dg={fecha:$('df').value,numero_corto:$('dn').value,mes:$('dm').value,anio:$('dy').value,responsable_nombre:$('rn').value,responsable_cargo:$('rc').value,responsable_ext:$('re').value,responsable_email:$('rm').value,dirigido_nombre:$('ddn').value,dirigido_cargo:$('ddc').value,dirigido_ext:$('dde').value,dirigido_email:$('ddm').value,elaborado_nombre:$('en').value,elaborado_cargo:$('ec').value,aprobado_nombre:$('an').value,aprobado_cargo:$('ac2').value};
+  try{
+    const r=await(await fetch('/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({datos_generales:dg,novedades_manuales:allNovs,motivos_override:mot})})).json();
+    clearInterval(_genTimer);
+    $('gen-bar').style.width='100%';
+    $('gen-phase').textContent='¡Listo!';
+    if(r.error){toast(r.error);}
+    else{
+      setTimeout(()=>{
+        $('dls').classList.remove('hidden');
+        $('dlk').innerHTML=`<div class="dlc"><div style="font-size:2rem;margin-bottom:8px">📄</div><div style="font-weight:600;font-size:.85rem;margin-bottom:3px">${r.word_file}</div><div style="color:var(--ink-dim);font-size:.72rem;margin-bottom:12px">Informe Word</div><a href="/download/${r.word_file}" class="btn bp" style="font-size:.78rem">Descargar</a></div><div class="dlc"><div style="font-size:2rem;margin-bottom:8px">📊</div><div style="font-weight:600;font-size:.85rem;margin-bottom:3px">${r.excel_file}</div><div style="color:var(--ink-dim);font-size:.72rem;margin-bottom:12px">Tablas Excel</div><a href="/download/${r.excel_file}" class="btn bs" style="font-size:.78rem">Descargar</a></div>`;
+        toast('Documentos generados','success');
+      },600);
+    }
+  }catch(e){clearInterval(_genTimer);toast('Error: '+e.message);}
+  setTimeout(()=>{$('l4').classList.remove('show');$('bg').disabled=false;_genRunning=false;},700);
+}
+// ─── DRAG & DROP ─────────────────────────────────────────────────────────────
+let _dndSrc=null;
+function dndStart(e,i){_dndSrc=i;e.currentTarget.classList.add('dragging');e.dataTransfer.effectAllowed='move';}
+function dndOver(e,i){e.preventDefault();if(i===_dndSrc)return;e.currentTarget.classList.add('drag-over');}
+function dndLeave(e,i){e.currentTarget.classList.remove('drag-over');}
+function dndDrop(e,i){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if(_dndSrc===null||_dndSrc===i)return;
+  const moved=novS.splice(_dndSrc,1)[0];
+  novS.splice(i,0,moved);
+  renderNovs();
+}
+function dndEnd(e){e.currentTarget.classList.remove('dragging');_dndSrc=null;}
+
+document.addEventListener('DOMContentLoaded',()=>{$('df').value=new Date().toISOString().split('T')[0]});
+</script>
+</body></html>

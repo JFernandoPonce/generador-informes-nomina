@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.xls
+*.xlsx
+*.docx
+!Plantilla.docx
+uploads/
+output/
+.venv/
+venv/
+
+# Novedades precargadas con datos reales (cedulas/nombres) - NO subir
+novedades_anteriores.json
