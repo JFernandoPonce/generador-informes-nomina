@@ -368,6 +368,9 @@ a.btn { text-decoration:none; }
     <p style="font-family:var(--serif);font-weight:600;font-size:.88rem;margin:14px 0 6px">Personas desvinculadas</p>
     <p style="color:var(--ink-dim);font-size:.72rem;margin-bottom:8px">Seleccione motivo y agregue la fecha de desvinculación:</p>
     <div class="tw"><table><thead><tr><th>Cédula</th><th>Nombres</th><th>Motivo</th><th>Observación</th></tr></thead><tbody id="stb"></tbody></table></div>
+    <div id="manual-desv-list" style="display:flex;flex-direction:column;gap:.3rem;margin-top:8px"></div>
+    <button onclick="addManualDesv()" style="margin-top:.45rem;font-size:.72rem;padding:.32rem .85rem;background:transparent;border:1px dashed var(--ink-dim);color:var(--ink-dim);border-radius:5px;cursor:pointer">+ Agregar persona</button>
+    <p style="color:var(--ink-dim);font-size:.68rem;margin-top:6px">➕ Para personas que se desvincularon a mitad de mes pero <strong>siguen en el distributivo actual</strong> (la comparación automática no las detecta). Se completan sus datos desde el distributivo.</p>
     <p style="color:var(--ink-dim);font-size:.68rem;margin-top:6px;font-style:italic">* Los tipos de Jubilación generan automáticamente una novedad separada en el informe.</p>
   </div>
   <div id="es" class="hidden">
@@ -473,6 +476,16 @@ function addCustomNov(){const t=prompt('Nombre de la novedad:');if(!t)return;con
 function loadS4(){if(!anD.categories)return;const cats=anD.categories;let tot=0;$('ds').innerHTML=Object.keys(cats).map(k=>{tot+=cats[k].count;return`<div class="sc"><div class="sv bl">${cats[k].count}</div><div class="sl">${k}</div></div>`}).join('')+`<div class="sc"><div class="sv gn">${tot}</div><div class="sl">Total</div></div>`;$('cac').innerHTML=Object.keys(cats).map(k=>{const c=cats[k];return`<div class="ca"><div class="ch" onclick="this.nextElementSibling.classList.toggle('open')"><span class="ctt">${c.title}</span><span class="cc">${c.count}</span></div><div class="cb"><p style="color:var(--ink-dim);font-size:.7rem;margin-bottom:6px">${c.subtitle}</p><div class="tw"><table><thead><tr><th>Nro</th><th>Cédula</th><th>Nombres</th><th>Escala</th><th>RMU</th></tr></thead><tbody>${c.data.map(r=>`<tr><td style="text-align:center">${r.nro}</td><td style="font-size:.7rem;letter-spacing:.02em">${r.cedula}</td><td>${r.nombres}</td><td style="font-size:.7rem">${r.escala}</td><td style="text-align:right;font-size:.72rem">${r.rmu}</td></tr>`).join('')}</tbody></table></div></div></div>`}).join('')}
 let _genRunning=false;
 let _genTimer=null;
+function addManualDesv(){
+  const list=document.getElementById('manual-desv-list');if(!list)return;
+  const row=document.createElement('div');row.className='manual-desv-row';
+  row.style.cssText='display:grid;grid-template-columns:120px 1fr 1.3fr auto;gap:.4rem;align-items:center';
+  row.innerHTML=`<input class="md-ced" placeholder="Cédula" style="font-size:.72rem;padding:.3rem .5rem">`+
+    `<select class="md-mot" style="font-size:.72rem;padding:.3rem .4rem"><option value="RENUNCIA">Renuncia</option><option value="FALLECIMIENTO">Fallecimiento</option><option value="NOTIFICACIÓN">Notificación</option><optgroup label="Jubilación"><option value="JUBILACIÓN VOLUNTARIA">Jubilación Voluntaria</option><option value="JUBILACIÓN OBLIGATORIA">Jubilación Obligatoria</option><option value="JUBILACIÓN POR DISCAPACIDAD">Jubilación por Discapacidad</option><option value="JUBILACIÓN POR INCAPACIDAD">Jubilación por Incapacidad</option></optgroup></select>`+
+    `<input class="md-obs" placeholder="Ej: Renuncia 12-03-2026" style="font-size:.72rem;padding:.3rem .5rem">`+
+    `<button onclick="this.closest('.manual-desv-row').remove()" style="background:none;border:none;color:var(--red,#c00);cursor:pointer;font-size:.9rem">✕</button>`;
+  list.appendChild(row);
+}
 async function doGen(){
   if(_genRunning)return;
   _genRunning=true;
@@ -501,6 +514,8 @@ async function doGen(){
   const mot={},obs={};
   document.querySelectorAll('select.ms[data-ced]').forEach(s=>mot[s.dataset.ced]=s.value);
   document.querySelectorAll('input.obs-input[data-ced]').forEach(i=>{if(i.value.trim())obs[i.dataset.ced]=i.value.trim()});
+  const desvManuales=Array.from(document.querySelectorAll('.manual-desv-row')).map(r=>({cedula:r.querySelector('.md-ced').value.trim(),motivo:r.querySelector('.md-mot').value,observacion:r.querySelector('.md-obs').value.trim()})).filter(m=>m.cedula);
+  desvManuales.forEach(m=>{if(m.observacion)obs[m.cedula]=m.observacion;});
   const autoNovs=['fallecimiento','renuncia','notificacion'].map(id=>({id,title:id.toUpperCase(),active:false,columns:['NRO.','CÉDULA','NOMBRES','ESCALA','RMU','OBSERVACIÓN'],rows:[],is_auto:true,auto_observations:obs}));
   // jubilacion_auto placeholder so backend can map obs
   autoNovs.push({id:'jubilacion_auto',auto_observations:obs});
@@ -509,7 +524,7 @@ async function doGen(){
   const allNovs=[...novS.filter(n=>n.active),...autoNovs];
   const dg={fecha:$('df').value,numero_corto:$('dn').value,mes:$('dm').value,anio:$('dy').value,responsable_nombre:$('rn').value,responsable_cargo:$('rc').value,responsable_ext:$('re').value,responsable_email:$('rm').value,dirigido_nombre:$('ddn').value,dirigido_cargo:$('ddc').value,dirigido_ext:$('dde').value,dirigido_email:$('ddm').value,elaborado_nombre:$('en').value,elaborado_cargo:$('ec').value,aprobado_nombre:$('an').value,aprobado_cargo:$('ac2').value};
   try{
-    const r=await(await fetch('/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({datos_generales:dg,novedades_manuales:allNovs,motivos_override:mot})})).json();
+    const r=await(await fetch('/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({datos_generales:dg,novedades_manuales:allNovs,motivos_override:mot,desvinculaciones_manuales:desvManuales})})).json();
     clearInterval(_genTimer);
     $('gen-bar').style.width='100%';
     $('gen-phase').textContent='¡Listo!';

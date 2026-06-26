@@ -418,6 +418,23 @@ def generate():
         da,db = read_distributivo(session['pa']), read_distributivo(session['pb'])
         sal,ent,camb = compare_distributivos(db,da); cats = get_distribution(da)
         for ced,mot in motivos.items(): sal.loc[sal['NÚMERO IDENTIFICACIÓN']==ced,'MOTIVO'] = mot
+        # N1: personas desvinculadas agregadas manualmente. Se fueron a mitad de mes
+        # pero SIGUEN en el distributivo actual, por lo que compare_distributivos no
+        # las detecta. Se buscan por cédula en el distributivo actual y se añaden a sal.
+        manuales = data.get('desvinculaciones_manuales', [])
+        if manuales:
+            act_full = filter_ocupados(da)
+            extra = []
+            for m in manuales:
+                ced_m = clean_id(m.get('cedula',''))
+                if not ced_m: continue
+                match = act_full[act_full['NÚMERO IDENTIFICACIÓN'].apply(lambda x: clean_id(x)==ced_m)]
+                if len(match):
+                    rr = match.iloc[[0]].copy()
+                    rr['MOTIVO'] = m.get('motivo','RENUNCIA')
+                    extra.append(rr)
+            if extra:
+                sal = pd.concat([sal]+extra, ignore_index=True)
         mm = {'renuncia':'RENUNCIA','fallecimiento':'FALLECIMIENTO','notificacion':'NOTIFICACIÓN'}
         JUB_TIPOS = ['JUBILACIÓN OBLIGATORIA','JUBILACIÓN VOLUNTARIA','JUBILACIÓN POR DISCAPACIDAD','JUBILACIÓN POR INCAPACIDAD']
         for nv in novs:
