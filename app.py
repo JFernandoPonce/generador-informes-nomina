@@ -108,7 +108,44 @@ def set_col_width(cell, width_cm):
         tcW.set(qn('w:w'), str(int(width_cm * 567)))
         tcW.set(qn('w:type'), 'dxa')
 
-def ct(cell, text, bold=False, sz=8, al=WD_ALIGN_PARAGRAPH.CENTER, fn='Arial Narrow'):
+def set_grid(table, widths_cm):
+    """Define los anchos de columna UNA sola vez vía tblGrid (rápido).
+    Reemplaza el anti-patrón set_col_width por celda (que en tablas grandes
+    hacía miles de operaciones XML y tardaba minutos)."""
+    grid = table._tbl.find(qn('w:tblGrid'))
+    if grid is None:
+        return
+    for gc in list(grid.findall(qn('w:gridCol'))):
+        grid.remove(gc)
+    for w in widths_cm:
+        grid.append(parse_xml(f'<w:gridCol {nsdecls("w")} w:w="{int(w * 567)}"/>'))
+
+def _esc_xml(s):
+    return (str(s) if s is not None else '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('"','&quot;')
+
+def _tr_xml(vals, widths_dxa, sz=8, align='center'):
+    """XML de una fila de datos (w:tr) construido directo. Aptos, centrado, bordes via estilo de tabla."""
+    SZ = str(int(sz * 2))
+    cells = []
+    for i, v in enumerate(vals):
+        w = widths_dxa[i] if widths_dxa and i < len(widths_dxa) else None
+        tcPr = '<w:tcPr>' + (f'<w:tcW w:w="{w}" w:type="dxa"/>' if w else '') + '<w:vAlign w:val="center"/></w:tcPr>'
+        rpr = f'<w:rPr><w:rFonts w:ascii="Aptos" w:hAnsi="Aptos"/><w:sz w:val="{SZ}"/></w:rPr>'
+        ppr = f'<w:pPr><w:jc w:val="{align}"/><w:spacing w:before="20" w:after="20"/></w:pPr>'
+        cells.append(f'<w:tc>{tcPr}<w:p>{ppr}<w:r>{rpr}<w:t xml:space="preserve">{_esc_xml(v)}</w:t></w:r></w:p></w:tc>')
+    return f'<w:tr>{"".join(cells)}</w:tr>'
+
+def append_rows_fast(table, rows_vals, widths_dxa, sz=8):
+    """Inyecta muchas filas de datos vía XML directo en una sola operación.
+    Evita el overhead de python-docx celda-por-celda (que en tablas grandes
+    tardaba minutos). Los bordes los hereda del estilo 'Table Grid' de la tabla."""
+    xml = ''.join(_tr_xml(v, widths_dxa, sz=sz) for v in rows_vals)
+    frag = parse_xml(f'<w:root {nsdecls("w")}>{xml}</w:root>')
+    tbl = table._tbl
+    for tr in list(frag):
+        tbl.append(tr)
+
+def ct(cell, text, bold=False, sz=8, al=WD_ALIGN_PARAGRAPH.CENTER, fn='Aptos'):
     cell.text = ''
     p = cell.paragraphs[0]; p.alignment = al
     pf = p.paragraph_format; pf.space_before = Pt(1); pf.space_after = Pt(1)
@@ -117,7 +154,7 @@ def ct(cell, text, bold=False, sz=8, al=WD_ALIGN_PARAGRAPH.CENTER, fn='Arial Nar
 def ap(doc, text, bold=False, sz=10, al=WD_ALIGN_PARAGRAPH.JUSTIFY, italic=False):
     p = doc.add_paragraph(); p.alignment = al
     pf = p.paragraph_format; pf.space_before = Pt(2); pf.space_after = Pt(2)
-    r = p.add_run(text); r.font.size = Pt(sz); r.font.name = 'Arial Narrow'; r.font.bold = bold; r.font.italic = italic
+    r = p.add_run(text); r.font.size = Pt(sz); r.font.name = 'Aptos'; r.font.bold = bold; r.font.italic = italic
     return p
 
 def set_table_width(table, width_cm):
@@ -144,25 +181,22 @@ def add_compact_table(doc, rows, tnum, ttitle, sub=''):
     hdrs = ['NRO.','CÉDULA','APELLIDOS Y NOMBRES','ESCALA','RMU','OBSERVACIÓN']
     # Widths in cm matching example: total ~13.5cm
     widths = [1.0, 1.6, 3.5, 3.0, 1.4, 3.0]
-    t = doc.add_table(rows=1+len(rows), cols=6)
+    widths_dxa = [int(w * 567) for w in widths]
+    t = doc.add_table(rows=1, cols=6)   # solo el header; las filas de datos se inyectan por XML
     t.alignment = WD_TABLE_ALIGNMENT.CENTER
     t.style = 'Table Grid'
     set_table_width(t, sum(widths))
+    set_grid(t, widths)   # anchos definidos UNA vez (rápido)
 
     for i, h in enumerate(hdrs):
         c = t.rows[0].cells[i]
         ct(c, h, bold=True, sz=8)
-        set_col_width(c, widths[i])
+        sc(c, 'D9D9D9')   # cabecera pintada (gris, estilo Fondos)
 
-    for idx, row in enumerate(rows):
-        c = t.rows[idx+1].cells
-        ct(c[0], row['nro'], sz=8)
-        ct(c[1], row['cedula'], sz=8)
-        ct(c[2], row['nombres'], sz=8)
-        ct(c[3], row['escala'], sz=8)
-        ct(c[4], row['rmu'], sz=8)
-        ct(c[5], row.get('observacion', ''), sz=8)
-        for i in range(6): set_col_width(c[i], widths[i])
+    # Filas de datos vía XML directo (13x más rápido que celda-por-celda)
+    rows_vals = [[r['nro'], r['cedula'], r['nombres'], r['escala'], r['rmu'], r.get('observacion', '')]
+                 for r in rows]
+    append_rows_fast(t, rows_vals, widths_dxa, sz=8)
 
     doc.add_paragraph()
 
@@ -173,21 +207,21 @@ def add_manual_nov(doc, nov, num):
     if not rows:
         ap(doc, 'Sin novedades en este período.', sz=9, italic=True); return
     nc = len(cols)
-    t = doc.add_table(rows=1+len(rows), cols=nc)
+    t = doc.add_table(rows=1, cols=nc)   # solo header; datos por XML
     t.alignment = WD_TABLE_ALIGNMENT.CENTER
     t.style = 'Table Grid'
     # ~13.5cm total, distributed evenly
     total_w = 13.5
     col_w = total_w / nc
+    widths_dxa = [int(col_w * 567)] * nc
     set_table_width(t, total_w)
+    set_grid(t, [col_w] * nc)   # anchos una vez (rápido)
     for i, h in enumerate(cols):
         ct(t.rows[0].cells[i], h, bold=True, sz=8)
-        set_col_width(t.rows[0].cells[i], col_w)
-    for ri, row in enumerate(rows):
-        for ci in range(nc):
-            v = row[ci] if ci < len(row) else ''
-            ct(t.rows[ri+1].cells[ci], v, sz=8)
-            set_col_width(t.rows[ri+1].cells[ci], col_w)
+        sc(t.rows[0].cells[i], 'D9D9D9')   # cabecera pintada
+    # Filas de datos vía XML directo
+    rows_vals = [[(row[ci] if ci < len(row) else '') for ci in range(nc)] for row in rows]
+    append_rows_fast(t, rows_vals, widths_dxa, sz=8)
     doc.add_paragraph()
 
 def gen_datos_table(doc, d):
@@ -215,17 +249,17 @@ def gen_firma_table(doc, d):
     t = doc.add_table(rows=6, cols=3); t.alignment = WD_TABLE_ALIGNMENT.CENTER; t.style = 'Table Grid'
     set_table_width(t, 13.5)
     fw = [5.0, 4.0, 4.5]
+    set_grid(t, fw)
     for bs, nk, ck in [(0,'elaborado_nombre','elaborado_cargo'),(3,'aprobado_nombre','aprobado_cargo')]:
         t.rows[bs].cells[0].merge(t.rows[bs].cells[2])
         ct(t.rows[bs].cells[0],'DESARROLLO DEL DOCUMENTO',sz=7,al=WD_ALIGN_PARAGRAPH.CENTER); sc(t.rows[bs].cells[0],'BEBEBE')
         for i,lbl in enumerate(['Nombre','Firma','Fecha']):
             ct(t.rows[bs+1].cells[i],lbl,sz=7,al=WD_ALIGN_PARAGRAPH.CENTER); sc(t.rows[bs+1].cells[i],'D9D9D9')
-            set_col_width(t.rows[bs+1].cells[i], fw[i])
         cell = t.rows[bs+2].cells[0]; cell.text = ''
         p1 = cell.paragraphs[0]; p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r1 = p1.add_run(d.get(nk,'')); r1.font.size = Pt(7); r1.font.name = 'Arial Narrow'
+        r1 = p1.add_run(d.get(nk,'')); r1.font.size = Pt(7); r1.font.name = 'Aptos'
         p2 = cell.add_paragraph(); p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r2 = p2.add_run(d.get(ck,'')); r2.font.size = Pt(7); r2.font.name = 'Arial Narrow'
+        r2 = p2.add_run(d.get(ck,'')); r2.font.size = Pt(7); r2.font.name = 'Aptos'
         ct(t.rows[bs+2].cells[1],'',sz=7)
         ct(t.rows[bs+2].cells[2],d.get('fecha',''),sz=7,al=WD_ALIGN_PARAGRAPH.CENTER)
 
@@ -252,7 +286,7 @@ def generate_word(dg, novs, cats, out):
             tag = el.tag.split('}')[-1] if '}' in el.tag else el.tag
             if tag != 'sectPr': doc.element.body.remove(el)
     else: doc = Document()
-    st = doc.styles['Normal']; st.font.name = 'Arial Narrow'; st.font.size = Pt(10)
+    st = doc.styles['Normal']; st.font.name = 'Aptos'; st.font.size = Pt(10)
     mes, anio = dg.get('mes','MES').upper(), dg.get('anio',datetime.now().year)
     gen_datos_table(doc, dg)
     ap(doc,'OBJETIVO:',bold=True,sz=10)
