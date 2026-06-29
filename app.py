@@ -25,6 +25,42 @@ for d in [app.config['UPLOAD_FOLDER'], app.config['OUTPUT_FOLDER']]:
     os.makedirs(d, exist_ok=True)
 
 # ─── UTILS ────────────────────────────────────────────────────────────────────
+
+# Ancho TOTAL único para TODAS las tablas de novedades/categorías (dxa).
+# Igual al usado en generador-fondos-reserva (NOMINA_CW). Decisión N2.
+TABLA_ANCHO_TOTAL = 7848
+
+# Anchos base por nombre de columna (dxa), portado tal cual de
+# generador-fondos-reserva/index.html (ANCHOS_CONOCIDOS). Se usan como
+# proporción de partida; el total siempre se reescala a TABLA_ANCHO_TOTAL.
+ANCHOS_CONOCIDOS = {
+    "no":300,"nro":300,"nro.":300,"#":300,"cédula":900,"cedula":900,"c.c.":900,"c.c. no.":900,
+    "apellidos y nombres":2000,"nombre afiliado":2000,"nombres":2000,"apellidos":1500,"nombre completo":2000,
+    "institución":1900,"institucion":1900,"cargo":1500,"cargo.":1500,"escala":700,"denominación":900,
+    "denominacion":900,"fecha":700,"fecha ingreso":800,"fecha salida":700,"observación":2307,"observacion":2307,
+    "rmu":700,"rmu autoridad":900,"rmu docente":900,"diferencia":900,"diferencia aut.":900,"acumula o no":800,
+}
+
+def get_ancho_auto(nombre):
+    """Ancho base (dxa) por nombre de columna; default 1800 si no se reconoce
+    (mismo default que getAnchoAuto() en Fondos)."""
+    return ANCHOS_CONOCIDOS.get(str(nombre).lower().strip(), 1800)
+
+def anchos_proporcionales(widths_base, total=TABLA_ANCHO_TOTAL):
+    """Reescala una lista de anchos base (dxa) para que la suma sea siempre
+    `total`, preservando la proporción relativa entre columnas. Si la lista
+    está vacía o no aporta info, cae a reparto igual (mismo total).
+    Equivalente exacto al reescalado de tabla_novedad() en Fondos."""
+    n = len(widths_base)
+    if n == 0:
+        return []
+    widths = list(widths_base) if any(widths_base) else [1] * n
+    suma = sum(widths) or 1
+    escala = total / suma
+    out = [round(w * escala) for w in widths]
+    out[-1] += total - sum(out)  # absorbe el resto del redondeo
+    return out
+
 def clean_id(val):
     s = str(val).strip()
     if s.endswith('.0'): s = s[:-2]
@@ -123,32 +159,34 @@ def set_grid(table, widths_cm):
 def _esc_xml(s):
     return (str(s) if s is not None else '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('"','&quot;')
 
-def _tr_xml(vals, widths_dxa, sz=8, align='center'):
-    """XML de una fila de datos (w:tr) construido directo. Aptos, centrado, bordes via estilo de tabla."""
+def _tr_xml(vals, widths_dxa, sz=8, align='center', space=20):
+    """XML de una fila de datos (w:tr) construido directo. Aptos, centrado, bordes via estilo de tabla.
+    space: w:spacing before/after en veinteavos de punto (20 = 1pt, default histórico).
+    Tablas de novedades (N2) usan space=0 para igualar la compactación de Fondos."""
     SZ = str(int(sz * 2))
     cells = []
     for i, v in enumerate(vals):
         w = widths_dxa[i] if widths_dxa and i < len(widths_dxa) else None
         tcPr = '<w:tcPr>' + (f'<w:tcW w:w="{w}" w:type="dxa"/>' if w else '') + '<w:vAlign w:val="center"/></w:tcPr>'
         rpr = f'<w:rPr><w:rFonts w:ascii="Aptos" w:hAnsi="Aptos"/><w:sz w:val="{SZ}"/></w:rPr>'
-        ppr = f'<w:pPr><w:jc w:val="{align}"/><w:spacing w:before="20" w:after="20"/></w:pPr>'
+        ppr = f'<w:pPr><w:jc w:val="{align}"/><w:spacing w:before="{space}" w:after="{space}"/></w:pPr>'
         cells.append(f'<w:tc>{tcPr}<w:p>{ppr}<w:r>{rpr}<w:t xml:space="preserve">{_esc_xml(v)}</w:t></w:r></w:p></w:tc>')
     return f'<w:tr>{"".join(cells)}</w:tr>'
 
-def append_rows_fast(table, rows_vals, widths_dxa, sz=8):
+def append_rows_fast(table, rows_vals, widths_dxa, sz=8, space=20):
     """Inyecta muchas filas de datos vía XML directo en una sola operación.
     Evita el overhead de python-docx celda-por-celda (que en tablas grandes
     tardaba minutos). Los bordes los hereda del estilo 'Table Grid' de la tabla."""
-    xml = ''.join(_tr_xml(v, widths_dxa, sz=sz) for v in rows_vals)
+    xml = ''.join(_tr_xml(v, widths_dxa, sz=sz, space=space) for v in rows_vals)
     frag = parse_xml(f'<w:root {nsdecls("w")}>{xml}</w:root>')
     tbl = table._tbl
     for tr in list(frag):
         tbl.append(tr)
 
-def ct(cell, text, bold=False, sz=8, al=WD_ALIGN_PARAGRAPH.CENTER, fn='Aptos'):
+def ct(cell, text, bold=False, sz=8, al=WD_ALIGN_PARAGRAPH.CENTER, fn='Aptos', space_pt=1):
     cell.text = ''
     p = cell.paragraphs[0]; p.alignment = al
-    pf = p.paragraph_format; pf.space_before = Pt(1); pf.space_after = Pt(1)
+    pf = p.paragraph_format; pf.space_before = Pt(space_pt); pf.space_after = Pt(space_pt)
     r = p.add_run(str(text)); r.font.size = Pt(sz); r.font.name = fn; r.font.bold = bold
 
 def ap(doc, text, bold=False, sz=10, al=WD_ALIGN_PARAGRAPH.JUSTIFY, italic=False):
@@ -158,11 +196,15 @@ def ap(doc, text, bold=False, sz=10, al=WD_ALIGN_PARAGRAPH.JUSTIFY, italic=False
     return p
 
 def set_table_width(table, width_cm):
-    """Set total table width."""
+    """Set total table width. Fuerza tblLayout=fixed para que Word respete los
+    anchos exactos (tcW/gridCol) sin reajustar por contenido o ventana — aplica
+    a TODAS las tablas que usan esta función, no solo las de novedades."""
     tblPr = table._tbl.find(qn('w:tblPr'))
     if tblPr is None:
         tblPr = parse_xml(f'<w:tblPr {nsdecls("w")}/>')
         table._tbl.insert(0, tblPr)
+    if tblPr.find(qn('w:tblLayout')) is None:
+        tblPr.append(parse_xml(f'<w:tblLayout {nsdecls("w")} w:type="fixed"/>'))
     tblW = tblPr.find(qn('w:tblW'))
     if tblW is None:
         tblW = parse_xml(f'<w:tblW {nsdecls("w")} w:w="{int(width_cm * 567)}" w:type="dxa"/>')
@@ -179,24 +221,25 @@ def add_compact_table(doc, rows, tnum, ttitle, sub=''):
         ap(doc, 'Sin novedades en este período.', sz=9, italic=True); return
 
     hdrs = ['NRO.','CÉDULA','APELLIDOS Y NOMBRES','ESCALA','RMU','OBSERVACIÓN']
-    # Widths in cm matching example: total ~13.5cm
-    widths = [1.0, 1.6, 3.5, 3.0, 1.4, 3.0]
-    widths_dxa = [int(w * 567) for w in widths]
+    # Widths base (cm) -> dxa -> reescalados a TABLA_ANCHO_TOTAL (N2)
+    widths_base_dxa = [int(w * 567) for w in [1.0, 1.6, 3.5, 3.0, 1.4, 3.0]]
+    widths_dxa = anchos_proporcionales(widths_base_dxa)
+    widths_cm = [w / 567 for w in widths_dxa]
     t = doc.add_table(rows=1, cols=6)   # solo el header; las filas de datos se inyectan por XML
     t.alignment = WD_TABLE_ALIGNMENT.CENTER
     t.style = 'Table Grid'
-    set_table_width(t, sum(widths))
-    set_grid(t, widths)   # anchos definidos UNA vez (rápido)
+    set_table_width(t, sum(widths_cm))
+    set_grid(t, widths_cm)   # anchos definidos UNA vez (rápido)
 
     for i, h in enumerate(hdrs):
         c = t.rows[0].cells[i]
-        ct(c, h, bold=True, sz=8)
+        ct(c, h, bold=True, sz=7, space_pt=0)  # N2: igual fuente/espaciado que Fondos (compacto)
         sc(c, 'D9D9D9')   # cabecera pintada (gris, estilo Fondos)
 
     # Filas de datos vía XML directo (13x más rápido que celda-por-celda)
     rows_vals = [[r['nro'], r['cedula'], r['nombres'], r['escala'], r['rmu'], r.get('observacion', '')]
                  for r in rows]
-    append_rows_fast(t, rows_vals, widths_dxa, sz=8)
+    append_rows_fast(t, rows_vals, widths_dxa, sz=7, space=0)  # N2: igual que Fondos
 
     doc.add_paragraph()
 
@@ -210,18 +253,18 @@ def add_manual_nov(doc, nov, num):
     t = doc.add_table(rows=1, cols=nc)   # solo header; datos por XML
     t.alignment = WD_TABLE_ALIGNMENT.CENTER
     t.style = 'Table Grid'
-    # ~13.5cm total, distributed evenly
-    total_w = 13.5
-    col_w = total_w / nc
-    widths_dxa = [int(col_w * 567)] * nc
-    set_table_width(t, total_w)
-    set_grid(t, [col_w] * nc)   # anchos una vez (rápido)
+    # Ancho por nombre de columna (ANCHOS_CONOCIDOS), reescalado a TABLA_ANCHO_TOTAL (N2)
+    widths_base_dxa = [get_ancho_auto(h) for h in cols]
+    widths_dxa = anchos_proporcionales(widths_base_dxa)
+    widths_cm = [w / 567 for w in widths_dxa]
+    set_table_width(t, sum(widths_cm))
+    set_grid(t, widths_cm)   # anchos una vez (rápido)
     for i, h in enumerate(cols):
-        ct(t.rows[0].cells[i], h, bold=True, sz=8)
+        ct(t.rows[0].cells[i], h, bold=True, sz=7, space_pt=0)  # N2: igual fuente/espaciado que Fondos
         sc(t.rows[0].cells[i], 'D9D9D9')   # cabecera pintada
     # Filas de datos vía XML directo
     rows_vals = [[(row[ci] if ci < len(row) else '') for ci in range(nc)] for row in rows]
-    append_rows_fast(t, rows_vals, widths_dxa, sz=8)
+    append_rows_fast(t, rows_vals, widths_dxa, sz=7, space=0)  # N2: igual que Fondos
     doc.add_paragraph()
 
 def gen_datos_table(doc, d):
