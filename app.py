@@ -27,18 +27,23 @@ for d in [app.config['UPLOAD_FOLDER'], app.config['OUTPUT_FOLDER']]:
 # ─── UTILS ────────────────────────────────────────────────────────────────────
 
 # Ancho TOTAL único para TODAS las tablas de novedades/categorías (dxa).
-# Igual al usado en generador-fondos-reserva (NOMINA_CW). Decisión N2.
-TABLA_ANCHO_TOTAL = 7848
+# >>> VARIAR ANCHO_TABLA_CM para cambiar el ancho total de las tablas de datos.
+ANCHO_TABLA_CM = 15.0
+TABLA_ANCHO_TOTAL = round(ANCHO_TABLA_CM * 567)  # dxa
 
-# Anchos base por nombre de columna (dxa), portado tal cual de
-# generador-fondos-reserva/index.html (ANCHOS_CONOCIDOS). Se usan como
-# proporción de partida; el total siempre se reescala a TABLA_ANCHO_TOTAL.
+# Anchos base por nombre de columna (dxa). FUENTE ÚNICA de anchos para TODAS
+# las tablas de datos (compactas y manuales). Son PROPORCIONES de partida; el
+# total siempre se reescala a TABLA_ANCHO_TOTAL. Las columnas de texto largo
+# (escala/cargo/institución/observación) llevan ancho generoso para no partir.
 ANCHOS_CONOCIDOS = {
-    "no":300,"nro":300,"nro.":300,"#":300,"cédula":900,"cedula":900,"c.c.":900,"c.c. no.":900,
-    "apellidos y nombres":2000,"nombre afiliado":2000,"nombres":2000,"apellidos":1500,"nombre completo":2000,
-    "institución":1900,"institucion":1900,"cargo":1500,"cargo.":1500,"escala":700,"denominación":900,
-    "denominacion":900,"fecha":700,"fecha ingreso":800,"fecha salida":700,"observación":2307,"observacion":2307,
-    "rmu":700,"rmu autoridad":900,"rmu docente":900,"diferencia":900,"diferencia aut.":900,"acumula o no":800,
+    "no":300,"nro":300,"nro.":300,"n":300,"#":300,                                  # índice (ancho real lo fija ANCHO_COL_NO_CM)
+    "cédula":907,"cedula":907,"c.c.":907,"c.c. no.":907,"c.c.no.":907,              # identificación
+    "apellidos y nombres":3200,"nombre afiliado":3200,"nombres":3200,"nombre completo":3200,"apellidos":2600,  # NOMBRES prioridad (peso alto)
+    "escala":1701,"cargo":1701,"cargo.":1701,"denominación":1701,"denominacion":1701,   # texto largo (generoso)
+    "institución":1701,"institucion":1701,"observación":1701,"observacion":1701,
+    "validación supervivencia":1500,"validacion supervivencia":1500,
+    "rmu":794,"rmu autoridad":900,"rmu docente":900,"diferencia":900,"diferencia aut.":900,   # cortos
+    "fecha":850,"fecha ingreso":850,"fecha salida":850,"acumula o no":900,
 }
 
 def get_ancho_auto(nombre):
@@ -59,6 +64,108 @@ def anchos_proporcionales(widths_base, total=TABLA_ANCHO_TOTAL):
     escala = total / suma
     out = [round(w * escala) for w in widths]
     out[-1] += total - sum(out)  # absorbe el resto del redondeo
+    return out
+
+# Ancho FIJO de la columna índice (No.), en cm. Esta columna NO escala con el
+# resto: queda constante en todas las tablas. 0.9cm = mínimo donde "No." entra
+# en una línea; subir a 1.0 si con la fuente Aptos real llega a partirse.
+# >>> VARIAR ESTE VALOR para tantear.
+ANCHO_COL_NO_CM = 0.9
+ANCHO_COL_NO = int(ANCHO_COL_NO_CM * 567)  # dxa
+
+# Cabeceras que se consideran columna índice. Se normaliza quitando el punto
+# final, así "No", "No.", "NRO.", "N" caen todos en índice.
+COLS_INDICE = {"no", "nro", "n", "n°", "#", "numero", "núm", "num"}
+
+def _norm_col(nombre):
+    return str(nombre).lower().strip().rstrip('.').strip()
+
+def es_col_indice(nombre):
+    return _norm_col(nombre) in COLS_INDICE
+
+# Etiqueta canónica única para la columna índice en TODAS las tablas.
+HEADER_INDICE = "No."
+
+# ─── ROLES DE COLUMNA + HEADERS CANÓNICOS ─────────────────────────────────────
+# Una columna se identifica por su ROL, no por el texto exacto del header. Así
+# "C.C. No.", "cédula", "cedula" son todas CÉDULA; "CARGO" y "ESCALA" son ESCALA.
+ANCHO_COL_CEDULA_CM = 2.2   # cédula / C.C. No. -> 10 dígitos, ancho constante (2.1 = mínimo)
+COLS_CEDULA  = {"cédula", "cedula", "c.c.", "c.c. no.", "c.c.no.", "cc", "c.c", "cc no.", "c.c no."}
+COLS_ESCALA  = {"escala", "cargo"}                       # cargo == escala (misma data)
+COLS_NOMBRES = {"apellidos y nombres", "nombres", "nombre afiliado", "nombre completo", "apellidos"}
+
+HEADER_CEDULA = "CÉDULA"
+HEADER_ESCALA = "ESCALA"
+
+def _en(nombre, conjunto):
+    return _norm_col(nombre) in {_norm_col(c) for c in conjunto}
+
+def es_col_cedula(nombre):  return _en(nombre, COLS_CEDULA)
+def es_col_escala(nombre):  return _en(nombre, COLS_ESCALA)
+def es_col_nombres(nombre): return _en(nombre, COLS_NOMBRES)
+
+def header_canonico(nombre):
+    """Header único por rol: índice->'No.', cédula/C.C.No.->'CÉDULA', cargo->'ESCALA'."""
+    if es_col_indice(nombre):  return HEADER_INDICE
+    if es_col_cedula(nombre):  return HEADER_CEDULA
+    if es_col_escala(nombre):  return HEADER_ESCALA
+    return str(nombre)
+
+def normalizar_tabla(cols, rows):
+    """Devuelve (cols, rows) normalizados:
+      - ORDEN canónico: [índice, cédula, nombres, ...resto en su orden original].
+        (corrige el caso jubilaciones, que traen nombres antes que cédula).
+      - HEADERS canónicos por rol (No./CÉDULA/ESCALA).
+      - reordena las CELDAS de cada fila en paralelo a las columnas.
+    Si la tabla ya está en orden canónico, no cambia nada."""
+    idx_i = next((i for i, c in enumerate(cols) if es_col_indice(c)), None)
+    ced_i = next((i for i, c in enumerate(cols) if es_col_cedula(c)), None)
+    nom_i = next((i for i, c in enumerate(cols) if es_col_nombres(c)), None)
+    orden = []
+    for i in (idx_i, ced_i, nom_i):
+        if i is not None and i not in orden:
+            orden.append(i)
+    for i in range(len(cols)):
+        if i not in orden:
+            orden.append(i)
+    cols_norm = [header_canonico(cols[i]) for i in orden]
+    rows_norm = [[(row[i] if i < len(row) else '') for i in orden] for row in rows]
+    return cols_norm, rows_norm
+
+def ancho_fijo_cm(nombre):
+    """cm fijo si la columna es índice o cédula; None si es variable (proporcional)."""
+    if es_col_indice(nombre):
+        return ANCHO_COL_NO_CM
+    if es_col_cedula(nombre):
+        return ANCHO_COL_CEDULA_CM
+    return None
+
+def calcular_anchos(cols, total=TABLA_ANCHO_TOTAL):
+    """Asigna dxa a cada columna de `cols` (por NOMBRE):
+      - columnas FIJAS (índice, cédula): su cm fijo, no escalan.
+      - resto (variables): reparten (total - suma_fijas) proporcional a su PESO
+        en ANCHOS_CONOCIDOS. NOMBRES tiene peso alto -> se lleva la mayor tajada.
+    Devuelve una lista de dxa que suma exactamente `total`."""
+    out = [None] * len(cols)
+    var_idx = []
+    for i, c in enumerate(cols):
+        f = ancho_fijo_cm(c)
+        if f is not None:
+            out[i] = round(f * 567)
+        else:
+            var_idx.append(i)
+    pool = total - sum(w for w in out if w is not None)
+    if var_idx and pool > 0:
+        pesos = [get_ancho_auto(cols[i]) for i in var_idx]
+        var_dxa = anchos_proporcionales(pesos, pool)
+        for k, i in enumerate(var_idx):
+            out[i] = var_dxa[k]
+    else:
+        for i in var_idx:
+            out[i] = 0
+    diff = total - sum(out)            # corrige redondeo
+    if diff and (var_idx or out):
+        out[(var_idx[-1] if var_idx else len(out) - 1)] += diff
     return out
 
 def clean_id(val):
@@ -220,10 +327,9 @@ def add_compact_table(doc, rows, tnum, ttitle, sub=''):
     if not rows:
         ap(doc, 'Sin novedades en este período.', sz=9, italic=True); return
 
-    hdrs = ['NRO.','CÉDULA','APELLIDOS Y NOMBRES','ESCALA','RMU','OBSERVACIÓN']
-    # Widths base (cm) -> dxa -> reescalados a TABLA_ANCHO_TOTAL (N2)
-    widths_base_dxa = [int(w * 567) for w in [1.0, 1.6, 3.5, 3.0, 1.4, 3.0]]
-    widths_dxa = anchos_proporcionales(widths_base_dxa)
+    hdrs = [HEADER_INDICE,'CÉDULA','APELLIDOS Y NOMBRES','ESCALA','RMU','OBSERVACIÓN']
+    # Sistema ÚNICO de anchos: fijos (No./cédula) + proporcional con prioridad a NOMBRES.
+    widths_dxa = calcular_anchos(hdrs)
     widths_cm = [w / 567 for w in widths_dxa]
     t = doc.add_table(rows=1, cols=6)   # solo el header; las filas de datos se inyectan por XML
     t.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -235,6 +341,7 @@ def add_compact_table(doc, rows, tnum, ttitle, sub=''):
         c = t.rows[0].cells[i]
         ct(c, h, bold=True, sz=7, space_pt=0)  # N2: igual fuente/espaciado que Fondos (compacto)
         sc(c, 'D9D9D9')   # cabecera pintada (gris, estilo Fondos)
+        set_col_width(c, widths_cm[i])  # FIX: ancho de cabecera = grid (sino Word ignora el grid)
 
     # Filas de datos vía XML directo (13x más rápido que celda-por-celda)
     rows_vals = [[r['nro'], r['cedula'], r['nombres'], r['escala'], r['rmu'], r.get('observacion', '')]
@@ -249,19 +356,20 @@ def add_manual_nov(doc, nov, num):
     rows = nov.get('rows', []); cols = nov.get('columns', [])
     if not rows:
         ap(doc, 'Sin novedades en este período.', sz=9, italic=True); return
+    cols, rows = normalizar_tabla(cols, rows)   # orden canónico [No./CÉDULA/NOMBRES/...] + headers por rol
     nc = len(cols)
     t = doc.add_table(rows=1, cols=nc)   # solo header; datos por XML
     t.alignment = WD_TABLE_ALIGNMENT.CENTER
     t.style = 'Table Grid'
-    # Ancho por nombre de columna (ANCHOS_CONOCIDOS), reescalado a TABLA_ANCHO_TOTAL (N2)
-    widths_base_dxa = [get_ancho_auto(h) for h in cols]
-    widths_dxa = anchos_proporcionales(widths_base_dxa)
+    # Sistema ÚNICO de anchos: fijos (No./cédula) + proporcional con prioridad a NOMBRES.
+    widths_dxa = calcular_anchos(cols)
     widths_cm = [w / 567 for w in widths_dxa]
     set_table_width(t, sum(widths_cm))
     set_grid(t, widths_cm)   # anchos una vez (rápido)
     for i, h in enumerate(cols):
         ct(t.rows[0].cells[i], h, bold=True, sz=7, space_pt=0)  # N2: igual fuente/espaciado que Fondos
         sc(t.rows[0].cells[i], 'D9D9D9')   # cabecera pintada
+        set_col_width(t.rows[0].cells[i], widths_cm[i])  # FIX: ancho de cabecera = grid
     # Filas de datos vía XML directo
     rows_vals = [[(row[ci] if ci < len(row) else '') for ci in range(nc)] for row in rows]
     append_rows_fast(t, rows_vals, widths_dxa, sz=7, space=0)  # N2: igual que Fondos
@@ -290,8 +398,8 @@ def gen_datos_table(doc, d):
 
 def gen_firma_table(doc, d):
     t = doc.add_table(rows=6, cols=3); t.alignment = WD_TABLE_ALIGNMENT.CENTER; t.style = 'Table Grid'
-    set_table_width(t, 13.5)
-    fw = [5.0, 4.0, 4.5]
+    set_table_width(t, 15.0)
+    fw = [w * 15.0 / 13.5 for w in [5.0, 4.0, 4.5]]  # reescala 13.5->15 conservando proporción
     set_grid(t, fw)
     for bs, nk, ck in [(0,'elaborado_nombre','elaborado_cargo'),(3,'aprobado_nombre','aprobado_cargo')]:
         t.rows[bs].cells[0].merge(t.rows[bs].cells[2])
@@ -310,7 +418,7 @@ def gen_conclusion_table(doc, cats):
     c = {k:len(cats[k]['data']) for k in cats}
     tl = c['9.1']+c['9.2']; td = c['9.3']+c['9.4']+c['9.5']; total = tl+c['9.6']+td
     t = doc.add_table(rows=7, cols=7); t.alignment = WD_TABLE_ALIGNMENT.CENTER; t.style = 'Table Grid'
-    set_table_width(t, 13.5)
+    set_table_width(t, 15.0)
     t.rows[0].cells[0].merge(t.rows[0].cells[6])
     ct(t.rows[0].cells[0],'PROGRAMAS',bold=True,sz=8); sc(t.rows[0].cells[0],'D9D9D9')
     for i,h in enumerate(['PERSONAL','LOSEP','CÓD. TRABAJO','56-001 G51','PROG 55-57/G51','PROG 58/55','TOTAL']):
@@ -359,7 +467,7 @@ def generate_excel(cats, novs, out):
     wb = Workbook(); hf = Font(name='Arial Narrow',bold=True,size=9); df_ = Font(name='Arial Narrow',size=9)
     bd = Border(left=Side('thin'),right=Side('thin'),top=Side('thin'),bottom=Side('thin'))
     def wt(ws, rows, sr=1):
-        for c,h in enumerate(['NRO.','CÉDULA','APELLIDOS Y NOMBRES','ESCALA','RMU','OBSERVACIÓN'],1):
+        for c,h in enumerate(['No.','CÉDULA','APELLIDOS Y NOMBRES','ESCALA','RMU','OBSERVACIÓN'],1):
             cl=ws.cell(row=sr,column=c,value=h); cl.font=hf; cl.border=bd; cl.alignment=Alignment(horizontal='center')
         for i,row in enumerate(rows):
             for c,v in enumerate([row['nro'],row['cedula'],row['nombres'],row['escala'],row['rmu'],row.get('observacion','')],1):
@@ -369,8 +477,9 @@ def generate_excel(cats, novs, out):
     wb.remove(wb.active)
     for nv in [n for n in novs if n.get('active') and n.get('rows')]:
         sn=nv['title'][:28].replace('/','_'); ws=wb.create_sheet(title=sn)
-        for c,h in enumerate(nv.get('columns',[]),1): cl=ws.cell(row=1,column=c,value=h); cl.font=hf; cl.border=bd
-        for i,row in enumerate(nv['rows']):
+        cols_n, rows_n = normalizar_tabla(nv.get('columns',[]), nv['rows'])   # mismo orden/headers que el Word
+        for c,h in enumerate(cols_n,1): cl=ws.cell(row=1,column=c,value=h); cl.font=hf; cl.border=bd
+        for i,row in enumerate(rows_n):
             for c,v in enumerate(row,1): cl=ws.cell(row=2+i,column=c,value=v); cl.font=df_; cl.border=bd
     nm={'9.1':'Adm Contrato LOSEP','9.2':'Adm Nombr LOSEP','9.3':'Doc Contrato 13-19','9.4':'Doc Contrato 6-8','9.5':'Doc Nombramiento','9.6':'Código Trabajo'}
     for k in ['9.1','9.2','9.3','9.4','9.5','9.6']:
